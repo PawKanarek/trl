@@ -171,8 +171,9 @@ class SFTTrainer(Trainer):
             raise ValueError(
                 "You passed a `DataCollatorForCompletionOnlyLM` to the SFTTrainer. This is not compatible with the `packing` argument."
             )
-
+        print(1)
         if is_peft_available() and peft_config is not None:
+            print(2)
             if not isinstance(peft_config, PeftConfig):
                 raise ValueError(
                     "If you want to use the PeftModel, you need to pass a PeftConfig object to the SFTTrainer."
@@ -180,6 +181,7 @@ class SFTTrainer(Trainer):
                 )
 
             if not isinstance(model, PeftModel):
+                print(3)
                 _support_gc_kwargs = hasattr(
                     args, "gradient_checkpointing_kwargs"
                 ) and "gradient_checkpointing_kwargs" in list(
@@ -217,6 +219,7 @@ class SFTTrainer(Trainer):
                     peft_module_casting_to_bf16(model)
 
         if tokenizer is None:
+            print(4)
             tokenizer = AutoTokenizer.from_pretrained(model.config._name_or_path)
             if getattr(tokenizer, "pad_token", None) is None:
                 tokenizer.pad_token = tokenizer.eos_token
@@ -258,14 +261,33 @@ class SFTTrainer(Trainer):
                 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
         # Pre-process the datasets only once per node. The remaining processes will use the cache.
-        with PartialState().local_main_process_first():
-            if dataset_kwargs is None:
-                dataset_kwargs = {}
-            if train_dataset is not None:
-                train_dataset = self._prepare_dataset(
-                    train_dataset,
+        # with PartialState().local_main_process_first():
+        if dataset_kwargs is None:
+            dataset_kwargs = {}
+        if train_dataset is not None:
+            train_dataset = self._prepare_dataset(
+                train_dataset,
+                tokenizer,
+                packing,
+                dataset_text_field,
+                max_seq_length,
+                formatting_func,
+                num_of_sequences,
+                chars_per_token,
+                remove_unused_columns=args.remove_unused_columns if args is not None else True,
+                **dataset_kwargs,
+            )
+        if eval_dataset is not None:
+            _multiple = isinstance(eval_dataset, dict)
+            _eval_datasets = eval_dataset if _multiple else {"singleton": eval_dataset}
+
+            eval_packing = packing if eval_packing is None else eval_packing
+
+            for _eval_dataset_name, _eval_dataset in _eval_datasets.items():
+                _eval_datasets[_eval_dataset_name] = self._prepare_dataset(
+                    _eval_dataset,
                     tokenizer,
-                    packing,
+                    eval_packing,
                     dataset_text_field,
                     max_seq_length,
                     formatting_func,
@@ -274,27 +296,8 @@ class SFTTrainer(Trainer):
                     remove_unused_columns=args.remove_unused_columns if args is not None else True,
                     **dataset_kwargs,
                 )
-            if eval_dataset is not None:
-                _multiple = isinstance(eval_dataset, dict)
-                _eval_datasets = eval_dataset if _multiple else {"singleton": eval_dataset}
-
-                eval_packing = packing if eval_packing is None else eval_packing
-
-                for _eval_dataset_name, _eval_dataset in _eval_datasets.items():
-                    _eval_datasets[_eval_dataset_name] = self._prepare_dataset(
-                        _eval_dataset,
-                        tokenizer,
-                        eval_packing,
-                        dataset_text_field,
-                        max_seq_length,
-                        formatting_func,
-                        num_of_sequences,
-                        chars_per_token,
-                        remove_unused_columns=args.remove_unused_columns if args is not None else True,
-                        **dataset_kwargs,
-                    )
-                if not _multiple:
-                    eval_dataset = _eval_datasets["singleton"]
+            if not _multiple:
+                eval_dataset = _eval_datasets["singleton"]
 
         if tokenizer.padding_side is not None and tokenizer.padding_side != "right":
             warnings.warn(
@@ -330,15 +333,17 @@ class SFTTrainer(Trainer):
 
     @wraps(Trainer.train)
     def train(self, *args, **kwargs):
+        print(33)
         # Activate neftune right before training.
         if self.neftune_noise_alpha is not None and not self._trainer_supports_neftune:
             self.model = self._trl_activate_neftune(self.model)
-
+        print(34)
         output = super().train(*args, **kwargs)
 
         # After training we make sure to retrieve back the original forward pass method
         # for the embedding layer by removing the forward post hook.
         if self.neftune_noise_alpha is not None and not self._trainer_supports_neftune:
+            print(35)
             unwrapped_model = unwrap_model(self.model)
             if is_peft_available() and isinstance(unwrapped_model, PeftModel):
                 embeddings = unwrapped_model.base_model.model.get_input_embeddings()

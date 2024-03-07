@@ -62,8 +62,7 @@ class ScriptArguments:
     dataset_text_field: str = field(default="text", metadata={"help": "the text field of the dataset"})
     max_seq_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
 
-
-if __name__ == "__main__":
+def main():
     parser = HfArgumentParser((ScriptArguments, TrainingArguments, ModelConfig))
     args, training_args, model_config = parser.parse_args_into_dataclasses()
     training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
@@ -113,3 +112,6 @@ if __name__ == "__main__":
     )
     trainer.train()
     trainer.save_model(training_args.output_dir)
+
+if __name__ == "__main__":
+    main()
